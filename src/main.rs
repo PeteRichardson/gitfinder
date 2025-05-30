@@ -39,8 +39,11 @@ async fn main() -> Result<()> {
     let max_clone = max_count.clone();
     let semaphore_clone = semaphore.clone();
 
+    println!("last commit,first commit,# commits,repo");
+
     let initial_task = task::spawn(async move {
         if let Err(e) = walk_dir(
+            root_dir.clone(),
             root_dir,
             tasks_clone,
             current_clone,
@@ -76,11 +79,25 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn simplified_repo_path(path: &Path, base: &Path) -> String {
+    if let Some(display_path) = path.parent().and_then(|p| p.strip_prefix(base).ok()) {
+        return display_path.display().to_string();
+    } else {
+        // should never happen, since base is the root dir where the walk starts,
+        // so all paths will have a parent and be under base.
+        panic!(
+            "Impossible! path ({}) has no parent or is not under base ({})!",
+            path.display(),
+            base.display()
+        );
+    };
+}
+
 /// Asynchronously prints:
 /// 1. number of commits on main
 /// 2. earliest commit date
 /// 3. latest commit date
-pub async fn print_git_repo_info(repo_path: &Path) -> anyhow::Result<()> {
+pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow::Result<()> {
     // Convert async_std::Path to std::path::Path
     let std_path = repo_path.to_path_buf();
 
@@ -131,10 +148,10 @@ pub async fn print_git_repo_info(repo_path: &Path) -> anyhow::Result<()> {
         };
 
         print_time(latest);
-        print!("<-");
+        print!(",");
         print_time(earliest);
-        print!("\t\t[{:3} commits]", count);
-        println!("\t{}", repo.path().display());
+        print!(",{:3}", count);
+        println!(",{}", simplified_repo_path(repo.path().into(), &root_path));
 
         anyhow::Ok(())
     })
@@ -143,6 +160,7 @@ pub async fn print_git_repo_info(repo_path: &Path) -> anyhow::Result<()> {
 
 fn walk_dir(
     dir: PathBuf,
+    root: PathBuf,
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     current_count: Arc<Mutex<usize>>,
     max_count: Arc<Mutex<usize>>,
@@ -185,8 +203,9 @@ fn walk_dir(
                 .with_context(|| format!("Failed to get file type for {}", path.display()))?;
 
             if file_type.is_dir() {
+                let root_clone = root.clone();
                 if filter_dir.filter(&path.as_path()) {
-                    print_git_repo_info(&path).await?;
+                    print_git_repo_info(&path, root_clone).await?;
                 } else {
                     let tasks_clone = tasks.clone();
                     let current_clone = current_count.clone();
@@ -196,6 +215,7 @@ fn walk_dir(
                     let new_task = task::spawn(async move {
                         if let Err(e) = walk_dir(
                             path_clone,
+                            root_clone,
                             tasks_clone,
                             current_clone,
                             max_clone,
