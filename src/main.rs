@@ -5,7 +5,7 @@ use async_std::stream::StreamExt;
 use async_std::task::{self, JoinHandle};
 use chrono::{DateTime, Local};
 use git2::Repository;
-use gitfinder::{AddToGithub, Filter};
+use gitfinder::{AddToGithub, Filter, simplified_repo_path};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -18,7 +18,7 @@ use clap::Parser;
 #[derive(Parser)]
 struct Args {
     /// Directory to start walking from (default: ".")
-    #[arg(short = 'd', long = "dir", default_value = ".")]
+    #[arg(default_value = ".")]
     dir: PathBuf,
 }
 
@@ -32,24 +32,20 @@ async fn main() -> Result<()> {
     let max_count = Arc::new(Mutex::new(0));
 
     // Concurrency limiter to avoid "Too Many Open Files"
-    let concurrency_limit = 100; // adjust based on your system
+    let concurrency_limit = 100;
     let semaphore = Arc::new(Semaphore::new(concurrency_limit));
-
     let tasks_clone = tasks.clone();
-    let current_clone = current_count.clone();
-    let max_clone = max_count.clone();
-    let semaphore_clone = semaphore.clone();
 
     println!("repository,oldest,newest,count");
 
     let initial_task = task::spawn(async move {
         if let Err(e) = walk_dir(
-            root_dir.clone(),
+            root_dir.clone(), // starting_dir = root_dir for initial walk_dir
             root_dir,
             tasks_clone,
-            current_clone,
-            max_clone,
-            semaphore_clone,
+            current_count.clone(),
+            max_count.clone(),
+            semaphore.clone(),
         )
         .await
         {
@@ -78,20 +74,6 @@ async fn main() -> Result<()> {
     //println!("Max concurrent tasks: {}", max_concurrent);
 
     Ok(())
-}
-
-fn simplified_repo_path(path: &Path, base: &Path) -> String {
-    if let Some(display_path) = path.parent().and_then(|p| p.strip_prefix(base).ok()) {
-        return display_path.display().to_string();
-    } else {
-        // should never happen, since base is the root dir where the walk starts,
-        // so all paths will have a parent and be under base.
-        panic!(
-            "Impossible! path ({}) has no parent or is not under base ({})!",
-            path.display(),
-            base.display()
-        );
-    };
 }
 
 /// Asynchronously prints:
@@ -204,7 +186,7 @@ fn walk_dir(
 
             if file_type.is_dir() {
                 let root_clone = root.clone();
-                if filter_dir.filter(&path.as_path()) {
+                if filter_dir.filter(&path) {
                     print_git_repo_info(&path, root_clone).await?;
                 } else {
                     let tasks_clone = tasks.clone();
