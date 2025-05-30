@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     let max_clone = max_count.clone();
     let semaphore_clone = semaphore.clone();
 
-    println!("last commit,first commit,# commits,repo");
+    println!("repo,first commit,newest comit,# commits");
 
     let initial_task = task::spawn(async move {
         if let Err(e) = walk_dir(
@@ -141,17 +141,16 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
             if let Some(t) = time {
                 let system_time = UNIX_EPOCH + Duration::from_secs(t.seconds().unsigned_abs());
                 let datetime: chrono::DateTime<chrono::Utc> = system_time.into();
-                print!("{}", datetime);
+                print!(",{}", datetime);
             } else {
-                println!("??");
+                println!(",");
             }
         };
 
-        print_time(latest);
-        print!(",");
+        print!("{}", simplified_repo_path(repo.path().into(), &root_path));
         print_time(earliest);
-        print!(",{:3}", count);
-        println!(",{}", simplified_repo_path(repo.path().into(), &root_path));
+        print_time(latest);
+        println!(",{}", count);
 
         anyhow::Ok(())
     })
