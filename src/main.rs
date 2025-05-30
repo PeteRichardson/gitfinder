@@ -3,6 +3,7 @@ use async_std::fs;
 use async_std::path::{Path, PathBuf};
 use async_std::stream::StreamExt;
 use async_std::task::{self, JoinHandle};
+use chrono::{DateTime, Local};
 use git2::Repository;
 use gitfinder::{AddToGithub, Filter};
 use std::future::Future;
@@ -39,7 +40,7 @@ async fn main() -> Result<()> {
     let max_clone = max_count.clone();
     let semaphore_clone = semaphore.clone();
 
-    println!("repo,first commit,newest comit,# commits");
+    println!("repository,oldest,newest,count");
 
     let initial_task = task::spawn(async move {
         if let Err(e) = walk_dir(
@@ -140,8 +141,8 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
         let print_time = |time: Option<git2::Time>| {
             if let Some(t) = time {
                 let system_time = UNIX_EPOCH + Duration::from_secs(t.seconds().unsigned_abs());
-                let datetime: chrono::DateTime<chrono::Utc> = system_time.into();
-                print!(",{}", datetime);
+                let datetime: DateTime<Local> = DateTime::from(system_time);
+                print!(",{}", datetime.format("%y-%m-%d"));
             } else {
                 println!(",");
             }
