@@ -26,35 +26,35 @@ impl AddToGithub {
 }
 
 // Filter should return true if:
-// 1. [IMPLEMENTED] dir is a directory
-// 2. [IMPLEMENTED] dir doesn't contain any "bad" path components
-//      This lets you avoid dependency checkout paths like the ones under
-//      target for rust and Build or .builds for swift/etc.
-// 3. [IMPLEMENTED] dir contains a git repo
-// 4. [IMPLEMENTED] dir does not have an 'origin' remote
+// 1. [IMPLEMENTED] last path component isn't "bad"
+//      (e.g. "target", "Build", ".builds", ...)
+//      This avoids repos that might be dependency checkouts.
+// 2. [IMPLEMENTED] dir contains a git repo
+// 3. [IMPLEMENTED] dir does not have an 'origin' remote
 //
-// TODO: use regexp matching instead of bad_path_components in step 3
-// TODO: dir contains newer commits than origin, and origin is github.com/<username>
+// TODO: use regexp matching instead of bad_path_components in step 1
+// TODO: origin is github.com/<username> and repo contains newer commits than origin
 impl Filter<Path> for AddToGithub {
     fn filter(&self, path: &Path) -> bool {
-        // 1. dir is a directory
-        // if !path.is_dir() {
-        //     return false;
-        // }
-
-        // 2. dir doesn't contain any "bad" path components
+        // 1. dir doesn't contain any "bad" path components
         if let Some(fname) = path.file_name().and_then(|f| f.to_str()) {
             if self.bad_path_components.contains(fname) {
                 return false;
             };
         }
 
-        // 3. dir contains a git repo
-        // 4. dir does not have an 'origin' remote
-        match Repository::open(path) {
-            Ok(repo) => repo.find_remote("origin").is_err(),
+        // 2. dir contains a git repo
+        let repo = match Repository::open(path) {
+            Ok(r) => r,
             Err(_) => return false,
+        };
+
+        // 3. dir does not have an 'origin' remote
+        if repo.find_remote("origin").is_ok() {
+            return false;
         }
+
+        true
     }
 }
 
