@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
 
     let initial_task = task::spawn(async move {
         if let Err(e) = walk_dir(
-            root_dir.clone(), // starting_dir = root_dir for initial walk_dir
+            root_dir.clone(), // for initial walk_dir, starting_dir = root_dir
             root_dir,
             tasks_clone,
             current_count.clone(),
@@ -92,6 +92,8 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
         let branch = repo
             .find_branch("main", git2::BranchType::Local)
             .or_else(|_| repo.find_branch("master", git2::BranchType::Local))?;
+
+        //println!("branch!! = {:?}", branch.name().unwrap());
         let oid = branch
             .get()
             .target()
@@ -141,8 +143,8 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
 }
 
 fn walk_dir(
-    dir: PathBuf,
-    root: PathBuf,
+    dir: PathBuf,  // starting dir for this recursion
+    root: PathBuf, // overall starting dir
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     current_count: Arc<Mutex<usize>>,
     max_count: Arc<Mutex<usize>>,
@@ -187,7 +189,8 @@ fn walk_dir(
             if file_type.is_dir() {
                 let root_clone = root.clone();
                 if filter_dir.filter(&path) {
-                    print_git_repo_info(&path, root_clone).await?;
+                    // println!("# looking at {}", &path.display());
+                    let _ = print_git_repo_info(&path, root_clone).await;
                 } else {
                     let tasks_clone = tasks.clone();
                     let current_clone = current_count.clone();
