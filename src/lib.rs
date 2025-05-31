@@ -30,7 +30,8 @@ impl AddToGithub {
 //      (e.g. "target", "Build", ".builds", ...)
 //      This avoids repos that might be dependency checkouts.
 // 2. dir contains a git repo
-// 3. dir does not have an 'origin' remote
+// 3. repo is not empty
+// 4. dir does not have an 'origin' remote
 //
 // TODO: use regexp matching instead of bad_path_components in step 1
 // TODO: origin is github.com/<username> and repo contains newer commits than origin
@@ -49,7 +50,12 @@ impl Filter<Path> for AddToGithub {
             Err(_) => return false,
         };
 
-        // 3. dir does not have an 'origin' remote
+        // 3. repo is not empty
+        if repo.is_empty().unwrap() {
+            return false;
+        }
+
+        // 4. dir does not have an 'origin' remote
         if repo.find_remote("origin").is_ok() {
             return false;
         }
