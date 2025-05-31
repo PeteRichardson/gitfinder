@@ -25,7 +25,7 @@ struct Args {
 #[async_std::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let root_dir = args.dir;
+    let root_dir = fs::canonicalize(args.dir).await?;
 
     let tasks: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
     let current_count = Arc::new(Mutex::new(0));
