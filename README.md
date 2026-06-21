@@ -15,8 +15,8 @@ When you have many local project folders, it is easy to lose track of repositori
   - do not have an `origin` remote
 - Prints CSV output with header:
   - `repository` (path relative to scan root)
-  - `oldest` commit date (`%y-%m-%d`, two-digit year as implemented in `src/main.rs`)
-  - `newest` commit date (`%y-%m-%d`, two-digit year as implemented in `src/main.rs`)
+  - `oldest` commit date (`%y-%m-%d`, where `%y` is two-digit year, as implemented in `src/main.rs`)
+  - `newest` commit date (`%y-%m-%d`, where `%y` is two-digit year, as implemented in `src/main.rs`)
   - `count` of commits on local `main` (fallback: `master`)
 - Uses async directory traversal with bounded concurrency.
 
