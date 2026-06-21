@@ -1,4 +1,4 @@
-use async_lock::Semaphore; // ✅ Correct, async-std-compatible Semaphore!
+use async_lock::Semaphore;
 use async_std::fs;
 use async_std::path::{Path, PathBuf};
 use async_std::stream::StreamExt;
@@ -69,10 +69,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Report the peak concurrency seen.
-    //let max_concurrent = *max_count.lock().unwrap();
-    //println!("Max concurrent tasks: {}", max_concurrent);
-
     Ok(())
 }
 
@@ -93,7 +89,6 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
             .find_branch("main", git2::BranchType::Local)
             .or_else(|_| repo.find_branch("master", git2::BranchType::Local))?;
 
-        //println!("branch!! = {:?}", branch.name().unwrap());
         let oid = branch
             .get()
             .target()
@@ -128,7 +123,7 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
                 let datetime: DateTime<Local> = DateTime::from(system_time);
                 print!(",{}", datetime.format("%y-%m-%d"));
             } else {
-                println!(",");
+                print!(",");
             }
         };
 
@@ -167,8 +162,7 @@ fn walk_dir(
 
             *current_locked
         };
-        //println!("Task started. Current active: {}", current);
-        let filter_dir = AddToGithub::new::<&str>(&[]);
+        let filter_dir = AddToGithub::new(&["target", ".build", "node_modules", "vendor", ".git"]);
 
         let mut entries = fs::read_dir(&dir)
             .await
@@ -189,8 +183,9 @@ fn walk_dir(
             if file_type.is_dir() {
                 let root_clone = root.clone();
                 if filter_dir.filter(&path) {
-                    // println!("# looking at {}", &path.display());
-                    let _ = print_git_repo_info(&path, root_clone).await;
+                    if let Err(e) = print_git_repo_info(&path, root_clone).await {
+                        eprintln!("Error reading repo {}: {:?}", path.display(), e);
+                    }
                 } else {
                     let tasks_clone = tasks.clone();
                     let current_clone = current_count.clone();

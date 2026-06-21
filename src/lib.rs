@@ -38,10 +38,12 @@ impl AddToGithub {
 impl Filter<Path> for AddToGithub {
     fn filter(&self, path: &Path) -> bool {
         // 1. dir doesn't contain any "bad" path components
-        if let Some(fname) = path.file_name().and_then(|f| f.to_str()) {
-            if self.bad_path_components.contains(fname) {
-                return false;
-            };
+        if path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|fname| self.bad_path_components.contains(fname))
+        {
+            return false;
         }
 
         // 2. dir contains a git repo
@@ -51,7 +53,7 @@ impl Filter<Path> for AddToGithub {
         };
 
         // 3. repo is not empty
-        if repo.is_empty().unwrap() {
+        if repo.is_empty().unwrap_or(true) {
             return false;
         }
 
@@ -96,24 +98,31 @@ pub fn simplified_repo_path(path: &Path, base: &Path) -> String {
     );
 }
 
-// NOTE: the tests below depend on some specific folders and git repos
-//       on my system.  e.g. /Users/pete/practice/rust/size is a repo
-//       but has never been uploaded to github, so for the purposes
-//       of this filter, the expected output is true.  i.e. it is
-//       a dir, doesn't contain bad components, contains a git repo
-//       and doesn't have an 'origin' remote
-// TODO: Change these tests to dynamically generate the necessary test
-//       repos at test setup time if they don't exist already.
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use git2::{Repository, Signature, Time};
+    use tempfile::TempDir;
+
+    fn make_repo_with_commit(dir: &std::path::Path) -> Repository {
+        let repo = Repository::init(dir).unwrap();
+        {
+            let sig = Signature::new("Test", "t@t.com", &Time::new(0, 0)).unwrap();
+            let tree_oid = repo.treebuilder(None).unwrap().write().unwrap();
+            let tree = repo.find_tree(tree_oid).unwrap();
+            repo.commit(Some("refs/heads/main"), &sig, &sig, "init", &tree, &[])
+                .unwrap();
+        }
+        repo
+    }
 
     #[test]
     fn test_ignore_zero_paths() {
+        let tmp = TempDir::new().unwrap();
+        make_repo_with_commit(tmp.path());
         let filter_dir = AddToGithub::new::<&str>(&[]);
-        let dir = Path::new("/Users/pete/practice/rust/size");
-        assert!(filter_dir.filter(&dir));
+        assert!(filter_dir.filter(Path::new(tmp.path())));
     }
 
     #[test]
@@ -121,7 +130,7 @@ mod tests {
         let filter = AddToGithub::new::<&str>(&[".build"]);
 
         let dir = Path::new("/Users/pete/projects/net/.build");
-        assert_eq!(filter.filter(&dir), false);
+        assert!(!filter.filter(dir));
     }
 
     #[test]
@@ -129,37 +138,40 @@ mod tests {
         let filter = AddToGithub::new::<&str>(&[".build", "target"]);
 
         let dir = Path::new("/Users/pete/projects/net/.build");
-        assert_eq!(filter.filter(&dir), false);
+        assert!(!filter.filter(dir));
         let dir = Path::new("/Users/pete/projects/net/target");
-        assert_eq!(filter.filter(&dir), false);
+        assert!(!filter.filter(dir));
     }
 
     #[test]
     fn test_is_not_dir() {
         let filter_dir = AddToGithub::new::<&str>(&[]);
         let bogus_dir = Path::new("/Users/no_such_user/");
-        assert_eq!(filter_dir.filter(&bogus_dir), false);
+        assert!(!filter_dir.filter(bogus_dir));
     }
 
     #[test]
     fn test_is_not_a_repo() {
         let filter_dir = AddToGithub::new::<&str>(&[]);
         let dir = Path::new("/Users/pete/");
-        assert_eq!(filter_dir.filter(&dir), false);
+        assert!(!filter_dir.filter(dir));
     }
 
     #[test]
     fn test_is_a_repo_with_origin() {
+        let tmp = TempDir::new().unwrap();
+        let repo = make_repo_with_commit(tmp.path());
+        repo.remote("origin", "https://example.com/r.git").unwrap();
         let filter_dir = AddToGithub::new::<&str>(&[]);
-        let dir = Path::new("/Users/pete/practice/practice-rs/");
-        assert_eq!(filter_dir.filter(&dir), false);
+        assert!(!filter_dir.filter(Path::new(tmp.path())));
     }
 
     #[test]
     fn test_is_a_repo_without_origin() {
+        let tmp = TempDir::new().unwrap();
+        make_repo_with_commit(tmp.path());
         let filter_dir = AddToGithub::new::<&str>(&[]);
-        let dir = Path::new("/Users/pete/practice/rust/size/");
-        assert!(filter_dir.filter(&dir));
+        assert!(filter_dir.filter(Path::new(tmp.path())));
     }
 
     #[test]
