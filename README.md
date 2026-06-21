@@ -15,8 +15,8 @@ When you have many local project folders, it is easy to lose track of repositori
   - do not have an `origin` remote
 - Prints CSV output with header:
   - `repository` (path relative to scan root)
-  - `oldest` commit date (`%y-%m-%d`)
-  - `newest` commit date (`%y-%m-%d`)
+  - `oldest` commit date (`%y-%m-%d`, two-digit year as implemented in `src/main.rs`)
+  - `newest` commit date (`%y-%m-%d`, two-digit year as implemented in `src/main.rs`)
   - `count` of commits on local `main` (fallback: `master`)
 - Uses async directory traversal with bounded concurrency.
 
@@ -109,7 +109,7 @@ level1/level2/myrepo,23-11-14,23-11-14,1
 | Setting | Value | Where defined |
 | --- | --- | --- |
 | Concurrency limit for async traversal | `100` | `src/main.rs` (`concurrency_limit`) |
-| Ignored directory names during scan | `target`, `.build`, `node_modules`, `vendor`, `.git` | `src/main.rs` (`AddToGithub::new(...)`) |
+| Ignored directory names during scan | `target`, `.build`, `node_modules`, `vendor`, `.git` | `src/main.rs` (`AddToGithub::new(...)`, where `AddToGithub` is the existing filter type name) |
 | Branch used for commit walk | `main`, fallback `master` | `src/main.rs` (`print_git_repo_info`) |
 | Date output format | `%y-%m-%d` | `src/main.rs` (`datetime.format(...)`) |
 
