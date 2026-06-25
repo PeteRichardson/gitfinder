@@ -5,7 +5,7 @@ use async_std::stream::StreamExt;
 use async_std::task::{self, JoinHandle};
 use chrono::{DateTime, Local};
 use git2::Repository;
-use gitfinder::{AddToGithub, Filter, simplified_repo_path};
+use lsproj::{AddToGithub, Filter, simplified_repo_path};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};

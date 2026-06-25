@@ -44,7 +44,7 @@ fn format_date(secs: i64) -> String {
 }
 
 fn run_gitfinder(dir: &Path) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_gitfinder"))
+    let output = Command::new(env!("CARGO_BIN_EXE_lsproj"))
         .arg(dir)
         .output()
         .expect("run gitfinder");
