@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -11,7 +12,8 @@ use git2::Repository;
 use tokio::sync::Semaphore;
 use tokio::task::{self, JoinHandle};
 
-use lsproj::{AddToGithub, Filter, simplified_repo_path};
+use lsproj::filter::{EntryKind, classify_entry};
+use lsproj::simplified_repo_path;
 
 #[derive(Parser)]
 struct Args {
@@ -27,13 +29,23 @@ async fn main() -> Result<()> {
 
     let tasks: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
     let semaphore = Arc::new(Semaphore::new(100));
+    let seen_paths: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
     let tasks_clone = tasks.clone();
     let root_clone = root_dir.clone();
+    let seen_clone = seen_paths.clone();
 
     println!("repository,oldest,newest,count");
 
     let initial_task = task::spawn(async move {
-        if let Err(e) = walk_dir(root_clone.clone(), root_clone, tasks_clone, semaphore).await {
+        if let Err(e) = walk_dir(
+            root_clone.clone(),
+            root_clone,
+            tasks_clone,
+            semaphore,
+            seen_clone,
+        )
+        .await
+        {
             eprintln!("Error in root: {e:?}");
         }
     });
@@ -115,11 +127,10 @@ fn walk_dir(
     root: PathBuf,
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     semaphore: Arc<Semaphore>,
+    seen_paths: Arc<Mutex<HashSet<PathBuf>>>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
     Box::pin(async move {
         let _permit = semaphore.acquire().await?;
-
-        let filter_dir = AddToGithub::new(&["target", ".build", "node_modules", "vendor", ".git"]);
 
         let mut read_dir = tokio::fs::read_dir(&dir)
             .await
@@ -136,26 +147,49 @@ fn walk_dir(
                 .await
                 .with_context(|| format!("Failed to get file type for {}", path.display()))?;
 
-            if ft.is_dir() {
-                if filter_dir.filter(&path) {
+            if !ft.is_dir() {
+                continue;
+            }
+
+            // Check canonical path for cycle detection
+            if let Ok(canonical) = std::fs::canonicalize(&path) {
+                let mut seen = seen_paths.lock().unwrap();
+                if !seen.insert(canonical) {
+                    continue; // already visited via a symlink — skip
+                }
+            }
+
+            match classify_entry(&path) {
+                EntryKind::Skip => {}
+                EntryKind::Project => {
                     let root_clone = root.clone();
                     let path_clone = path.clone();
+                    let path_display = path.display().to_string();
                     let new_task = task::spawn(async move {
                         if let Err(e) = print_git_repo_info(path_clone, root_clone).await {
-                            eprintln!("Error reading repo {}: {e:?}", path.display());
+                            eprintln!("Error reading repo {path_display}: {e:?}");
                         }
                     });
                     tasks.lock().unwrap().push(new_task);
-                } else {
+                }
+                EntryKind::Collection => {
                     let root_clone = root.clone();
                     let tasks_clone = tasks.clone();
                     let semaphore_clone = semaphore.clone();
+                    let seen_clone = seen_paths.clone();
                     let path_clone = path.clone();
+                    let path_display = path.display().to_string();
                     let new_task = task::spawn(async move {
-                        if let Err(e) =
-                            walk_dir(path_clone, root_clone, tasks_clone, semaphore_clone).await
+                        if let Err(e) = walk_dir(
+                            path_clone,
+                            root_clone,
+                            tasks_clone,
+                            semaphore_clone,
+                            seen_clone,
+                        )
+                        .await
                         {
-                            eprintln!("Error in {}: {e:?}", path.display());
+                            eprintln!("Error in {path_display}: {e:?}");
                         }
                     });
                     tasks.lock().unwrap().push(new_task);
