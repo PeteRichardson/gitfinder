@@ -1,20 +1,18 @@
-use async_lock::Semaphore;
-use async_std::fs;
-use async_std::path::{Path, PathBuf};
-use async_std::stream::StreamExt;
-use async_std::task::{self, JoinHandle};
-use chrono::{DateTime, Local};
-use git2::Repository;
-use lsproj::{AddToGithub, Filter, simplified_repo_path};
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Local};
 use clap::Parser;
+use git2::Repository;
+use tokio::sync::Semaphore;
+use tokio::task::{self, JoinHandle};
 
-/// Walk a directory tree asynchronously with bounded concurrency.
+use lsproj::{AddToGithub, Filter, simplified_repo_path};
+
 #[derive(Parser)]
 struct Args {
     /// Directory to start walking from (default: ".")
@@ -22,39 +20,25 @@ struct Args {
     dir: PathBuf,
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let root_dir = fs::canonicalize(args.dir).await?;
+    let root_dir = tokio::fs::canonicalize(&args.dir).await?;
 
     let tasks: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
-    let current_count = Arc::new(Mutex::new(0));
-    let max_count = Arc::new(Mutex::new(0));
-
-    // Concurrency limiter to avoid "Too Many Open Files"
-    let concurrency_limit = 100;
-    let semaphore = Arc::new(Semaphore::new(concurrency_limit));
+    let semaphore = Arc::new(Semaphore::new(100));
     let tasks_clone = tasks.clone();
+    let root_clone = root_dir.clone();
 
     println!("repository,oldest,newest,count");
 
     let initial_task = task::spawn(async move {
-        if let Err(e) = walk_dir(
-            root_dir.clone(), // for initial walk_dir, starting_dir = root_dir
-            root_dir,
-            tasks_clone,
-            current_count.clone(),
-            max_count.clone(),
-            semaphore.clone(),
-        )
-        .await
-        {
-            eprintln!("Error in root: {:?}", e);
+        if let Err(e) = walk_dir(root_clone.clone(), root_clone, tasks_clone, semaphore).await {
+            eprintln!("Error in root: {e:?}");
         }
     });
     tasks.lock().unwrap().push(initial_task);
 
-    // Wait for all tasks to complete.
     loop {
         let current_tasks = {
             let mut locked = tasks.lock().unwrap();
@@ -63,28 +47,18 @@ async fn main() -> Result<()> {
             }
             std::mem::take(&mut *locked)
         };
-
         for handle in current_tasks {
-            handle.await;
+            let _ = handle.await;
         }
     }
 
     Ok(())
 }
 
-/// Asynchronously prints:
-/// 1. number of commits on main
-/// 2. earliest commit date
-/// 3. latest commit date
-pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow::Result<()> {
-    // Convert async_std::Path to std::path::Path
-    let std_path = repo_path.to_path_buf();
+async fn print_git_repo_info(repo_path: PathBuf, root_path: PathBuf) -> Result<()> {
+    task::spawn_blocking(move || {
+        let repo = Repository::open(&repo_path)?;
 
-    async_std::task::spawn_blocking(move || {
-        // Open the repository
-        let repo = Repository::open(std_path)?;
-
-        // Find the main branch (it might be "main" or "master")
         let branch = repo
             .find_branch("main", git2::BranchType::Local)
             .or_else(|_| repo.find_branch("master", git2::BranchType::Local))?;
@@ -93,130 +67,102 @@ pub async fn print_git_repo_info(repo_path: &Path, root_path: PathBuf) -> anyhow
             .get()
             .target()
             .ok_or_else(|| anyhow::anyhow!("Invalid branch target"))?;
+
         let mut revwalk = repo.revwalk()?;
         revwalk.push(oid)?;
 
-        // Track commit info
         let mut earliest: Option<git2::Time> = None;
         let mut latest: Option<git2::Time> = None;
         let mut count = 0;
 
         for commit_id in revwalk {
-            let commit_id = commit_id?;
-            let commit = repo.find_commit(commit_id)?;
-
-            let commit_time = commit.time();
-
-            if earliest.is_none() || commit_time.seconds() < earliest.unwrap().seconds() {
-                earliest = Some(commit_time);
+            let commit = repo.find_commit(commit_id?)?;
+            let t = commit.time();
+            if earliest.is_none() || t.seconds() < earliest.unwrap().seconds() {
+                earliest = Some(t);
             }
-            if latest.is_none() || commit_time.seconds() > latest.unwrap().seconds() {
-                latest = Some(commit_time);
+            if latest.is_none() || t.seconds() > latest.unwrap().seconds() {
+                latest = Some(t);
             }
-
             count += 1;
         }
 
-        let print_time = |time: Option<git2::Time>| {
-            if let Some(t) = time {
-                let system_time = UNIX_EPOCH + Duration::from_secs(t.seconds().unsigned_abs());
-                let datetime: DateTime<Local> = DateTime::from(system_time);
-                print!(",{}", datetime.format("%y-%m-%d"));
-            } else {
-                print!(",");
-            }
+        let fmt = |t: Option<git2::Time>| {
+            t.map(|t| {
+                let st = UNIX_EPOCH + Duration::from_secs(t.seconds().unsigned_abs());
+                let dt: DateTime<Local> = DateTime::from(st);
+                format!("{}", dt.format("%y-%m-%d"))
+            })
+            .unwrap_or_default()
         };
 
-        print!("{}", simplified_repo_path(repo.path().into(), &root_path));
-        print_time(earliest);
-        print_time(latest);
-        println!(",{}", count);
+        println!(
+            "{},{},{},{}",
+            simplified_repo_path(&repo_path, &root_path),
+            fmt(earliest),
+            fmt(latest),
+            count
+        );
 
         anyhow::Ok(())
     })
     .await
+    .context("spawn_blocking panicked")?
 }
 
 fn walk_dir(
-    dir: PathBuf,  // starting dir for this recursion
-    root: PathBuf, // overall starting dir
+    dir: PathBuf,
+    root: PathBuf,
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    current_count: Arc<Mutex<usize>>,
-    max_count: Arc<Mutex<usize>>,
     semaphore: Arc<Semaphore>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
     Box::pin(async move {
-        // 🚦 Acquire a permit to limit concurrency
-        let _permit = semaphore.acquire().await;
+        let _permit = semaphore.acquire().await?;
 
-        // Increment active count
-        let _current = {
-            let mut current_locked = current_count.lock().unwrap();
-            *current_locked += 1;
+        let filter_dir =
+            AddToGithub::new(&["target", ".build", "node_modules", "vendor", ".git"]);
 
-            // Update max if needed
-            let mut max_locked = max_count.lock().unwrap();
-            if *current_locked > *max_locked {
-                *max_locked = *current_locked;
-            }
-
-            *current_locked
-        };
-        let filter_dir = AddToGithub::new(&["target", ".build", "node_modules", "vendor", ".git"]);
-
-        let mut entries = fs::read_dir(&dir)
+        let mut read_dir = tokio::fs::read_dir(&dir)
             .await
             .with_context(|| format!("Failed to read directory: {}", dir.display()))?;
 
-        while let Some(entry) = entries
-            .next()
+        while let Some(entry) = read_dir
+            .next_entry()
             .await
-            .transpose()
             .with_context(|| format!("Failed to read entry in {}", dir.display()))?
         {
             let path = entry.path();
-            let file_type = entry
+            let ft = entry
                 .file_type()
                 .await
                 .with_context(|| format!("Failed to get file type for {}", path.display()))?;
 
-            if file_type.is_dir() {
-                let root_clone = root.clone();
+            if ft.is_dir() {
                 if filter_dir.filter(&path) {
-                    if let Err(e) = print_git_repo_info(&path, root_clone).await {
-                        eprintln!("Error reading repo {}: {:?}", path.display(), e);
-                    }
+                    let root_clone = root.clone();
+                    let path_clone = path.clone();
+                    let new_task = task::spawn(async move {
+                        if let Err(e) = print_git_repo_info(path_clone, root_clone).await {
+                            eprintln!("Error reading repo {}: {e:?}", path.display());
+                        }
+                    });
+                    tasks.lock().unwrap().push(new_task);
                 } else {
+                    let root_clone = root.clone();
                     let tasks_clone = tasks.clone();
-                    let current_clone = current_count.clone();
-                    let max_clone = max_count.clone();
                     let semaphore_clone = semaphore.clone();
                     let path_clone = path.clone();
                     let new_task = task::spawn(async move {
-                        if let Err(e) = walk_dir(
-                            path_clone,
-                            root_clone,
-                            tasks_clone,
-                            current_clone,
-                            max_clone,
-                            semaphore_clone,
-                        )
-                        .await
+                        if let Err(e) =
+                            walk_dir(path_clone, root_clone, tasks_clone, semaphore_clone).await
                         {
-                            eprintln!("Error in {}: {:?}", path.display(), e);
+                            eprintln!("Error in {}: {e:?}", path.display());
                         }
                     });
                     tasks.lock().unwrap().push(new_task);
                 }
             }
         }
-
-        // Decrement active count
-        let _current = {
-            let mut locked = current_count.lock().unwrap();
-            *locked -= 1;
-            *locked
-        };
 
         Ok(())
     })

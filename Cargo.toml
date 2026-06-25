@@ -5,11 +5,15 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
-async-lock = "3.4.0"
-async-std = { version = "1.13.1", features = ["attributes"] }
 chrono = "0.4.41"
 clap = { version = "4.5.38", features = ["derive"] }
+comfy-table = "7.2.2"
 git2 = "0.20.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde-saphyr = "0.0.28"
+serde_json = "1.0.150"
+tokei = "14.0.0"
+tokio = { version = "1.52.3", features = ["full"] }
 
 [dev-dependencies]
 tempfile = "3"
