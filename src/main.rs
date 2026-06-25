@@ -119,8 +119,7 @@ fn walk_dir(
     Box::pin(async move {
         let _permit = semaphore.acquire().await?;
 
-        let filter_dir =
-            AddToGithub::new(&["target", ".build", "node_modules", "vendor", ".git"]);
+        let filter_dir = AddToGithub::new(&["target", ".build", "node_modules", "vendor", ".git"]);
 
         let mut read_dir = tokio::fs::read_dir(&dir)
             .await

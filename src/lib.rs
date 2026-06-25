@@ -1,8 +1,8 @@
 // Sample code for a filter
 
-use std::path::Path;
 use git2::Repository;
 use std::collections::HashSet;
+use std::path::Path;
 
 pub trait Filter<T: ?Sized> {
     // ?Sized is needed to relax the usual Sized requirement on Trait params
@@ -97,7 +97,6 @@ pub fn simplified_repo_path(path: &Path, base: &Path) -> String {
         base.display()
     );
 }
-
 
 #[cfg(test)]
 mod tests {
