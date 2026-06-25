@@ -3,17 +3,14 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Local};
 use clap::Parser;
-use git2::Repository;
 use tokio::sync::Semaphore;
 use tokio::task::{self, JoinHandle};
 
 use lsproj::filter::{EntryKind, classify_entry};
-use lsproj::simplified_repo_path;
+use lsproj::metadata::{ProjectMetadata, extract_metadata};
 
 #[derive(Parser)]
 struct Args {
@@ -30,11 +27,12 @@ async fn main() -> Result<()> {
     let tasks: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
     let semaphore = Arc::new(Semaphore::new(100));
     let seen_paths: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    let results: Arc<Mutex<Vec<ProjectMetadata>>> = Arc::new(Mutex::new(Vec::new()));
+
     let tasks_clone = tasks.clone();
     let root_clone = root_dir.clone();
     let seen_clone = seen_paths.clone();
-
-    println!("repository,oldest,newest,count");
+    let results_clone = results.clone();
 
     let initial_task = task::spawn(async move {
         if let Err(e) = walk_dir(
@@ -43,6 +41,7 @@ async fn main() -> Result<()> {
             tasks_clone,
             semaphore,
             seen_clone,
+            results_clone,
         )
         .await
         {
@@ -64,62 +63,34 @@ async fn main() -> Result<()> {
         }
     }
 
-    Ok(())
-}
+    let mut all = Arc::try_unwrap(results)
+        .expect("results arc still held")
+        .into_inner()
+        .unwrap();
+    all.sort_by(|a, b| a.path.cmp(&b.path));
 
-async fn print_git_repo_info(repo_path: PathBuf, root_path: PathBuf) -> Result<()> {
-    task::spawn_blocking(move || {
-        let repo = Repository::open(&repo_path)?;
-
-        let branch = repo
-            .find_branch("main", git2::BranchType::Local)
-            .or_else(|_| repo.find_branch("master", git2::BranchType::Local))?;
-
-        let oid = branch
-            .get()
-            .target()
-            .ok_or_else(|| anyhow::anyhow!("Invalid branch target"))?;
-
-        let mut revwalk = repo.revwalk()?;
-        revwalk.push(oid)?;
-
-        let mut earliest: Option<git2::Time> = None;
-        let mut latest: Option<git2::Time> = None;
-        let mut count = 0;
-
-        for commit_id in revwalk {
-            let commit = repo.find_commit(commit_id?)?;
-            let t = commit.time();
-            if earliest.is_none() || t.seconds() < earliest.unwrap().seconds() {
-                earliest = Some(t);
-            }
-            if latest.is_none() || t.seconds() > latest.unwrap().seconds() {
-                latest = Some(t);
-            }
-            count += 1;
-        }
-
-        let fmt = |t: Option<git2::Time>| {
-            t.map(|t| {
-                let st = UNIX_EPOCH + Duration::from_secs(t.seconds().unsigned_abs());
-                let dt: DateTime<Local> = DateTime::from(st);
-                format!("{}", dt.format("%y-%m-%d"))
-            })
-            .unwrap_or_default()
+    // Temporary CSV output (replaced in Task 9)
+    println!("repository,oldest,newest,count");
+    for p in &all {
+        let fmt = |iso: &Option<String>| {
+            iso.as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| {
+                    let local: chrono::DateTime<chrono::Local> = dt.into();
+                    local.format("%y-%m-%d").to_string()
+                })
+                .unwrap_or_default()
         };
-
         println!(
             "{},{},{},{}",
-            simplified_repo_path(&repo_path, &root_path),
-            fmt(earliest),
-            fmt(latest),
-            count
+            p.path,
+            fmt(&p.oldest_unpushed),
+            fmt(&p.newest_unpushed),
+            p.unpushed_count,
         );
+    }
 
-        anyhow::Ok(())
-    })
-    .await
-    .context("spawn_blocking panicked")?
+    Ok(())
 }
 
 fn walk_dir(
@@ -128,6 +99,7 @@ fn walk_dir(
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     semaphore: Arc<Semaphore>,
     seen_paths: Arc<Mutex<HashSet<PathBuf>>>,
+    results: Arc<Mutex<Vec<ProjectMetadata>>>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
     Box::pin(async move {
         let _permit = semaphore.acquire().await?;
@@ -164,10 +136,17 @@ fn walk_dir(
                 EntryKind::Project => {
                     let root_clone = root.clone();
                     let path_clone = path.clone();
+                    let results_clone = results.clone();
                     let path_display = path.display().to_string();
                     let new_task = task::spawn(async move {
-                        if let Err(e) = print_git_repo_info(path_clone, root_clone).await {
-                            eprintln!("Error reading repo {path_display}: {e:?}");
+                        let result = task::spawn_blocking(move || {
+                            extract_metadata(&path_clone, &root_clone)
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok(meta)) => results_clone.lock().unwrap().push(meta),
+                            Ok(Err(e)) => eprintln!("Error extracting {path_display}: {e:?}"),
+                            Err(e) => eprintln!("Task panic for {path_display}: {e:?}"),
                         }
                     });
                     tasks.lock().unwrap().push(new_task);
@@ -177,6 +156,7 @@ fn walk_dir(
                     let tasks_clone = tasks.clone();
                     let semaphore_clone = semaphore.clone();
                     let seen_clone = seen_paths.clone();
+                    let results_clone = results.clone();
                     let path_clone = path.clone();
                     let path_display = path.display().to_string();
                     let new_task = task::spawn(async move {
@@ -186,6 +166,7 @@ fn walk_dir(
                             tasks_clone,
                             semaphore_clone,
                             seen_clone,
+                            results_clone,
                         )
                         .await
                         {
