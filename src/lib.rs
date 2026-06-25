@@ -72,7 +72,7 @@ impl Filter<Path> for AddToGithub {
 ///
 /// # Example
 /// ```
-/// use gitfinder::simplified_repo_path;
+/// use lsproj::simplified_repo_path;
 /// use async_std::path::Path;
 /// let simple = simplified_repo_path(
 ///     Path::new("/Users/pete/projects/foo/lib/.git"),

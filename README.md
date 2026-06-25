@@ -1,10 +1,16 @@
-# gitfinder
+# lsproj
 
-Find local Git repositories that have commits but no `origin` remote, and print commit-date/count metadata as CSV.
+Traverse local project directories, extract structured metadata about each project, and support a triage workflow for deciding what to publish.
 
 ## Motivation
 
-When you have many local project folders, it is easy to lose track of repositories that were initialized and used locally but never connected to a remote. `gitfinder` scans a directory tree and reports repos that look ready to publish: non-empty repos with no `origin` remote.
+When you have many local project folders, it is easy to lose track of work that was never published. `lsproj` is the foundation of a three-part workflow:
+
+1. **lsproj CLI** — fast, filesystem-level facts about each project (git status, commit counts, language, etc.)
+2. **`.repostatus`** — a per-project annotation file recording triage state (`skip`, `pending`, `ready`, `posted`)
+3. **`/triage` skill** — a Claude Code skill that reads lsproj output, inspects repo contents, and writes `.repostatus` for cases requiring AI judgment
+
+Currently `lsproj` scans a directory tree and reports non-empty Git repositories with no `origin` remote — the core case that motivated the tool. Richer metadata extraction, additional output formats, and the `mark` subcommand are planned (see [Roadmap](#roadmap) below).
 
 ## Key features
 
@@ -32,8 +38,8 @@ When you have many local project folders, it is easy to lose track of repositori
 Build from source:
 
 ```bash
-git clone https://github.com/PeteRichardson/gitfinder.git
-cd gitfinder
+git clone https://github.com/PeteRichardson/lsproj.git
+cd lsproj
 cargo build --release
 ```
 
@@ -47,7 +53,7 @@ Optional local install via Cargo:
 
 ```bash
 cargo install --path .
-gitfinder /path/to/search/root
+lsproj /path/to/search/root
 ```
 
 ## Usage
@@ -63,7 +69,7 @@ Expected help text:
 ```text
 Walk a directory tree asynchronously with bounded concurrency
 
-Usage: gitfinder [DIR]
+Usage: lsproj [DIR]
 
 Arguments:
   [DIR]  Directory to start walking from (default: ".") [default: .]
@@ -76,10 +82,10 @@ Most common invocations:
 
 ```bash
 # Scan current directory (default)
-gitfinder
+lsproj
 
 # Scan a specific tree
-gitfinder ~/projects
+lsproj ~/projects
 
 # Run directly with Cargo
 cargo run -- ~/projects
@@ -95,7 +101,7 @@ level1/level2/myrepo,23-11-14,23-11-14,1
 
 ## Configuration
 
-`gitfinder` exposes one CLI argument and uses a few built-in behaviors from source code.
+`lsproj` exposes one CLI argument and uses a few built-in behaviors from source code.
 
 ### Command-line interface
 
@@ -109,7 +115,7 @@ level1/level2/myrepo,23-11-14,23-11-14,1
 | Setting | Value | Where defined |
 | --- | --- | --- |
 | Concurrency limit for async traversal | `100` | `src/main.rs` (`concurrency_limit`) |
-| Ignored directory names during scan | `target`, `.build`, `node_modules`, `vendor`, `.git` | `src/main.rs` (`AddToGithub::new(...)`, where `AddToGithub` is the existing filter type name) |
+| Ignored directory names during scan | `target`, `.build`, `node_modules`, `vendor`, `.git` | `src/main.rs` |
 | Branch used for commit walk | `main`, fallback `master` | `src/main.rs` (`print_git_repo_info`) |
 | Date output format | `%y-%m-%d` | `src/main.rs` (`datetime.format(...)`) |
 
@@ -142,6 +148,20 @@ Tests include:
 
 - unit tests in `src/lib.rs`
 - CLI/integration tests in `tests/cli.rs`
+
+## Roadmap
+
+The current binary implements the original `gitfinder` behavior (CSV output, git-only repos, single-branch commit walk). Planned work tracked in `docs/lsproj-PLAN.md`:
+
+- **Richer metadata**: language detection and LOC via `tokei`, unpushed commits across all branches, filesystem signals (`has_readme`, `has_tests`, `has_ci`, `has_license`)
+- **Output formats**: formatted table (default), `--json`, `--csv`, `--schema`
+- **`mark` subcommand**: write `.repostatus` from the terminal (`lsproj mark . skip "trivial"`)
+- **Filtering**: `--filter <state>` to restrict output by triage state
+- **Traversal improvements**: collection-root detection, worktree skipping, cycle detection
+- **`lsproj-mcp`**: companion MCP server exposing `lsproj_scan` and `lsproj_inspect` tools for Claude Code skills
+- **`/triage` skill**: Claude Code skill for AI-assisted project triage (spec in `docs/SKILL-triage.md`)
+
+See `docs/lsproj_design.md` for the full behavioral specification.
 
 ## License
 
