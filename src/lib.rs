@@ -4,6 +4,14 @@ use git2::Repository;
 use std::collections::HashSet;
 use std::path::Path;
 
+pub mod filter;
+pub mod fs_meta;
+pub mod git_info;
+pub mod loc;
+pub mod metadata;
+pub mod output;
+pub mod repostatus;
+
 pub trait Filter<T: ?Sized> {
     // ?Sized is needed to relax the usual Sized requirement on Trait params
     // since we'll be filtering Paths (which are not Sized)
