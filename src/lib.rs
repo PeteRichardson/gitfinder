@@ -1,6 +1,6 @@
 // Sample code for a filter
 
-use async_std::path::Path;
+use std::path::Path;
 use git2::Repository;
 use std::collections::HashSet;
 
@@ -73,7 +73,7 @@ impl Filter<Path> for AddToGithub {
 /// # Example
 /// ```
 /// use lsproj::simplified_repo_path;
-/// use async_std::path::Path;
+/// use std::path::Path;
 /// let simple = simplified_repo_path(
 ///     Path::new("/Users/pete/projects/foo/lib/.git"),
 ///     Path::new("/Users/pete/projects/")
