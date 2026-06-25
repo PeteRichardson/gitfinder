@@ -20,14 +20,21 @@ pub fn extract_fs_info(path: &Path) -> FsInfo {
     let has_license = names.iter().any(|n| n.starts_with("license"));
     let has_tests = path.join("tests").is_dir()
         || path.join("test").is_dir()
-        || names.iter().any(|n| n.ends_with("_test.rs") || n.ends_with("_spec.rb") || n == "test.py");
+        || names
+            .iter()
+            .any(|n| n.ends_with("_test.rs") || n.ends_with("_spec.rb") || n == "test.py");
     let has_ci = path.join(".github").join("workflows").is_dir()
         || path.join(".travis.yml").is_file()
         || path.join(".circleci").is_dir()
         || path.join("Jenkinsfile").is_file()
         || path.join(".gitlab-ci.yml").is_file();
 
-    FsInfo { has_readme, has_tests, has_ci, has_license }
+    FsInfo {
+        has_readme,
+        has_tests,
+        has_ci,
+        has_license,
+    }
 }
 
 #[cfg(test)]

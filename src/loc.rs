@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::path::Path;
 use tokei::{Config, Languages};
 
@@ -24,7 +25,7 @@ pub fn extract_loc(path: &Path) -> LocInfo {
         })
         .collect();
 
-    stats.sort_by(|a, b| b.code.cmp(&a.code));
+    stats.sort_by_key(|s| Reverse(s.code));
 
     let primary_language = stats.first().map(|s| s.name.clone());
 
@@ -42,7 +43,11 @@ mod tests {
     #[test]
     fn test_loc_rust_file() {
         let tmp = TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("main.rs"), "fn main() {\n    println!(\"hi\");\n}\n").unwrap();
+        std::fs::write(
+            tmp.path().join("main.rs"),
+            "fn main() {\n    println!(\"hi\");\n}\n",
+        )
+        .unwrap();
         let info = extract_loc(tmp.path());
         // tokei should detect Rust
         assert!(
