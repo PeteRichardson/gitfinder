@@ -8,7 +8,7 @@ pub struct LanguageStat {
     pub blanks: u64,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectMetadata {
     pub path: String,
     pub name: String,
@@ -33,6 +33,34 @@ pub struct ProjectMetadata {
     pub repostatus_age_days: Option<u32>,
 }
 
+impl Default for ProjectMetadata {
+    fn default() -> Self {
+        ProjectMetadata {
+            path: Default::default(),
+            name: Default::default(),
+            is_git: Default::default(),
+            is_worktree: Default::default(),
+            has_remote: Default::default(),
+            origin_url: Default::default(),
+            is_on_github: Default::default(),
+            unpushed_count: Default::default(),
+            oldest_unpushed: Default::default(),
+            newest_unpushed: Default::default(),
+            branches_with_unpushed: Default::default(),
+            total_commits: Default::default(),
+            primary_language: Default::default(),
+            languages: Default::default(),
+            has_readme: Default::default(),
+            has_tests: Default::default(),
+            has_ci: Default::default(),
+            has_license: Default::default(),
+            last_modified: Default::default(),
+            repostatus_state: "unreviewed".to_string(),
+            repostatus_age_days: Default::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,5 +79,11 @@ mod tests {
         assert!(json.contains("\"path\":\"foo/bar\""));
         assert!(json.contains("\"total_commits\":5"));
         assert!(json.contains("\"repostatus_state\":\"unreviewed\""));
+    }
+
+    #[test]
+    fn test_default_repostatus_state_is_unreviewed() {
+        let m = ProjectMetadata::default();
+        assert_eq!(m.repostatus_state, "unreviewed");
     }
 }
