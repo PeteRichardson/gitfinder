@@ -57,6 +57,11 @@ enum SubCommand {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    if args.schema {
+        output::print_schema();
+        return Ok(());
+    }
+
     if let Some(SubCommand::Mark {
         path,
         state,
@@ -120,10 +125,9 @@ async fn main() -> Result<()> {
     all.sort_by(|a, b| a.path.cmp(&b.path));
     let all = apply_filters(all, &args.filter);
 
-    match (args.schema, args.json, args.csv) {
-        (true, _, _) => output::print_schema(),
-        (_, true, _) => output::print_json(&all),
-        (_, _, true) => output::print_csv(&all),
+    match (args.json, args.csv) {
+        (true, _) => output::print_json(&all),
+        (_, true) => output::print_csv(&all),
         _ => output::print_table(&all),
     }
 
