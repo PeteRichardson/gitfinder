@@ -31,6 +31,11 @@ struct Args {
     #[arg(long)]
     schema: bool,
 
+    /// Filter by repostatus state. Valid values: unreviewed, pending, skip, ready, posted, no-git.
+    /// Can be specified multiple times.
+    #[arg(long, value_name = "STATE")]
+    filter: Vec<String>,
+
     #[command(subcommand)]
     command: Option<SubCommand>,
 }
@@ -98,6 +103,7 @@ async fn main() -> Result<()> {
         .into_inner()
         .unwrap();
     all.sort_by(|a, b| a.path.cmp(&b.path));
+    let all = apply_filters(all, &args.filter);
 
     if let Some(SubCommand::Mark { .. }) = &args.command {
         todo!("mark subcommand — implemented in Task 11");
@@ -111,6 +117,21 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn apply_filters(projects: Vec<ProjectMetadata>, filters: &[String]) -> Vec<ProjectMetadata> {
+    if filters.is_empty() {
+        return projects;
+    }
+    projects
+        .into_iter()
+        .filter(|p| {
+            filters.iter().any(|f| match f.as_str() {
+                "no-git" => !p.is_git,
+                state => p.repostatus_state == state,
+            })
+        })
+        .collect()
 }
 
 fn walk_dir(
