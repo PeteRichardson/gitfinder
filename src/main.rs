@@ -99,12 +99,10 @@ async fn main() -> Result<()> {
         .unwrap();
     all.sort_by(|a, b| a.path.cmp(&b.path));
 
-    // Handle subcommands first
     if let Some(SubCommand::Mark { .. }) = &args.command {
         todo!("mark subcommand — implemented in Task 11");
     }
 
-    // Output
     match (args.schema, args.json, args.csv) {
         (true, _, _) => output::print_schema(),
         (_, true, _) => output::print_json(&all),
