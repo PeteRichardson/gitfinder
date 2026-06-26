@@ -11,18 +11,48 @@ use tokio::task::{self, JoinHandle};
 
 use lsproj::filter::{EntryKind, classify_entry};
 use lsproj::metadata::{ProjectMetadata, extract_metadata};
+use lsproj::output;
 
 #[derive(Parser)]
+#[command(name = "lsproj", about = "List local projects with metadata")]
 struct Args {
-    /// Directory to start walking from (default: ".")
-    #[arg(default_value = ".")]
-    dir: PathBuf,
+    /// Directory to scan
+    dir: Option<PathBuf>,
+
+    /// Output as JSON array
+    #[arg(long)]
+    json: bool,
+
+    /// Output as CSV (backward-compatible format)
+    #[arg(long)]
+    csv: bool,
+
+    /// Print JSON Schema for ProjectMetadata
+    #[arg(long)]
+    schema: bool,
+
+    #[command(subcommand)]
+    command: Option<SubCommand>,
+}
+
+#[derive(clap::Subcommand)]
+enum SubCommand {
+    /// Mark a project directory with a repostatus state
+    Mark {
+        /// Project directory path
+        path: PathBuf,
+        /// State: pending | skip | ready | posted
+        state: String,
+        /// Optional reason
+        reason: Option<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let root_dir = tokio::fs::canonicalize(&args.dir).await?;
+    let scan_dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
+    let root_dir = tokio::fs::canonicalize(&scan_dir).await?;
 
     let tasks: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
     let semaphore = Arc::new(Semaphore::new(100));
@@ -69,25 +99,17 @@ async fn main() -> Result<()> {
         .unwrap();
     all.sort_by(|a, b| a.path.cmp(&b.path));
 
-    // Temporary CSV output (replaced in Task 9)
-    println!("repository,oldest,newest,count");
-    for p in &all {
-        let fmt = |iso: &Option<String>| {
-            iso.as_deref()
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| {
-                    let local: chrono::DateTime<chrono::Local> = dt.into();
-                    local.format("%y-%m-%d").to_string()
-                })
-                .unwrap_or_default()
-        };
-        println!(
-            "{},{},{},{}",
-            p.path,
-            fmt(&p.oldest_unpushed),
-            fmt(&p.newest_unpushed),
-            p.unpushed_count,
-        );
+    // Handle subcommands first
+    if let Some(SubCommand::Mark { .. }) = &args.command {
+        todo!("mark subcommand — implemented in Task 11");
+    }
+
+    // Output
+    match (args.schema, args.json, args.csv) {
+        (true, _, _) => output::print_schema(),
+        (_, true, _) => output::print_json(&all),
+        (_, _, true) => output::print_csv(&all),
+        _ => output::print_table(&all),
     }
 
     Ok(())

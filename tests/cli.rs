@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, UNIX_EPOCH};
 use tempfile::TempDir;
+use serde_json;
 
 /// Creates a git repo at `path` with one commit per entry in `commit_times`
 /// (unix seconds), chained as parent -> child in the order given, all on
@@ -53,9 +54,19 @@ fn format_date(secs: i64) -> String {
 fn run_lsproj(dir: &Path) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_lsproj"))
         .arg(dir)
+        .arg("--csv")
         .output()
         .expect("run lsproj");
+    assert!(output.status.success(), "lsproj exited with failure: {:?}", output);
     String::from_utf8(output.stdout).expect("utf8 stdout")
+}
+
+fn run_lsproj_with_args(dir: &Path, extra_args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_lsproj"))
+        .arg(dir)
+        .args(extra_args)
+        .output()
+        .expect("run lsproj")
 }
 
 #[test]
@@ -219,4 +230,40 @@ fn test_collection_root_is_descended() {
         "repo inside collection root should be found, got:\n{}",
         stdout
     );
+}
+
+#[test]
+fn test_json_output_is_array() {
+    let root = TempDir::new().unwrap();
+    let repo_dir = root.path().join("myrepo");
+    std::fs::create_dir(&repo_dir).unwrap();
+    std::fs::write(repo_dir.join("main.rs"), "fn main() {}").unwrap();
+    init_repo_with_commits(&repo_dir, &[1_700_000_000]);
+
+    let output = run_lsproj_with_args(root.path(), &["--json"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert!(json.is_array(), "expected JSON array, got: {stdout}");
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["name"], "myrepo");
+    assert_eq!(arr[0]["is_git"], true);
+}
+
+#[test]
+fn test_table_output_default() {
+    let root = TempDir::new().unwrap();
+    let repo_dir = root.path().join("myrepo");
+    std::fs::create_dir(&repo_dir).unwrap();
+    std::fs::write(repo_dir.join("main.rs"), "fn main() {}").unwrap();
+    init_repo_with_commits(&repo_dir, &[1_700_000_000]);
+
+    let output = run_lsproj_with_args(root.path(), &[]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    // Table output should have header columns
+    assert!(stdout.contains("PATH"), "expected table header, got: {stdout}");
+    assert!(stdout.contains("STATUS"), "expected table header, got: {stdout}");
+    assert!(stdout.contains("myrepo"), "expected myrepo in table, got: {stdout}");
 }
