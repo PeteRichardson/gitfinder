@@ -142,7 +142,7 @@ fn test_recurses_into_nested_directories() {
 }
 
 #[test]
-fn test_excludes_empty_repo() {
+fn test_includes_empty_repo() {
     let root = TempDir::new().unwrap();
     let repo_dir = root.path().join("emptyrepo");
     std::fs::create_dir(&repo_dir).unwrap();
@@ -151,8 +151,8 @@ fn test_excludes_empty_repo() {
     let stdout = run_lsproj(root.path());
 
     assert!(
-        !stdout.contains("emptyrepo,"),
-        "empty repo should be excluded, got:\n{}",
+        stdout.contains("emptyrepo"),
+        "empty git repo should be included (has .git dir), got:\n{}",
         stdout
     );
 }
