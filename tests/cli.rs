@@ -251,6 +251,42 @@ fn test_json_output_is_array() {
 }
 
 #[test]
+fn test_filter_no_git() {
+    let root = TempDir::new().unwrap();
+    // Non-git project (has files but no .git)
+    let non_git = root.path().join("myscript");
+    std::fs::create_dir(&non_git).unwrap();
+    std::fs::write(non_git.join("script.py"), "print('hello')").unwrap();
+    // Git project
+    let git_proj = root.path().join("myrepo");
+    std::fs::create_dir(&git_proj).unwrap();
+    std::fs::write(git_proj.join("main.rs"), "fn main() {}").unwrap();
+    init_repo_with_commits(&git_proj, &[1_700_000_000]);
+
+    let output = run_lsproj_with_args(root.path(), &["--filter", "no-git"]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("myscript"), "expected myscript in --filter no-git output");
+    assert!(!stdout.contains("myrepo"), "myrepo should be excluded by --filter no-git");
+}
+
+#[test]
+fn test_filter_unreviewed() {
+    let root = TempDir::new().unwrap();
+    let repo_dir = root.path().join("myrepo");
+    std::fs::create_dir(&repo_dir).unwrap();
+    std::fs::write(repo_dir.join("main.rs"), "fn main() {}").unwrap();
+    init_repo_with_commits(&repo_dir, &[1_700_000_000]);
+    // No .repostatus file — state is "unreviewed" by default
+
+    let output = run_lsproj_with_args(root.path(), &["--filter", "unreviewed", "--json"]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let arr = json.as_array().unwrap();
+    assert!(!arr.is_empty(), "unreviewed project should appear");
+    assert_eq!(arr[0]["repostatus_state"], "unreviewed");
+}
+
+#[test]
 fn test_table_output_default() {
     let root = TempDir::new().unwrap();
     let repo_dir = root.path().join("myrepo");
