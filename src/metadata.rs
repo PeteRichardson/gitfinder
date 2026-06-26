@@ -86,10 +86,12 @@ pub fn extract_metadata(path: &Path, root: &Path) -> anyhow::Result<ProjectMetad
         Some(rs) => {
             let state = rs.state.unwrap_or_else(|| "unreviewed".to_string());
             let age = rs.reviewed.as_deref().and_then(|d| {
-                NaiveDate::parse_from_str(d, "%Y-%m-%d").ok().map(|reviewed| {
-                    let today = chrono::Local::now().date_naive();
-                    (today - reviewed).num_days().max(0) as u32
-                })
+                NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .ok()
+                    .map(|reviewed| {
+                        let today = chrono::Local::now().date_naive();
+                        (today - reviewed).num_days().max(0) as u32
+                    })
             });
             (state, age)
         }
