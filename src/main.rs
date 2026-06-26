@@ -57,7 +57,6 @@ enum SubCommand {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Handle mark subcommand before any directory walk
     if let Some(SubCommand::Mark {
         path,
         state,
