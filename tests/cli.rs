@@ -4,7 +4,6 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, UNIX_EPOCH};
 use tempfile::TempDir;
-use serde_json;
 
 /// Creates a git repo at `path` with one commit per entry in `commit_times`
 /// (unix seconds), chained as parent -> child in the order given, all on

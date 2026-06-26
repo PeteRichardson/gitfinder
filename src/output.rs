@@ -1,5 +1,4 @@
 use comfy_table::Table;
-use serde_json;
 
 use crate::metadata::ProjectMetadata;
 
