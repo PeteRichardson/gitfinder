@@ -1,14 +1,18 @@
-use comfy_table::Table;
+use comfy_table::{Table, presets::NOTHING};
 
 use crate::metadata::ProjectMetadata;
 
 pub fn print_table(projects: &[ProjectMetadata]) {
     let mut table = Table::new();
-    table.set_header(vec!["PATH", "LANG", "LOC", "COMMITS", "UNPUSHED", "STATUS"]);
+    table.load_preset(NOTHING);
+    table.set_header(vec![
+        "PATH", "ORIGIN", "LANG", "LOC", "COMMITS", "UNPUSHED", "STATUS",
+    ]);
     for p in projects {
         let total_loc: u64 = p.languages.iter().map(|l| l.code).sum();
         table.add_row(vec![
             p.path.clone(),
+            p.origin_url.clone().unwrap_or_default(),
             p.primary_language.clone().unwrap_or_default(),
             total_loc.to_string(),
             p.total_commits.to_string(),
