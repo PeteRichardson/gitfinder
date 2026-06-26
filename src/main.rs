@@ -56,6 +56,22 @@ enum SubCommand {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Handle mark subcommand before any directory walk
+    if let Some(SubCommand::Mark {
+        path,
+        state,
+        reason,
+    }) = args.command
+    {
+        let canonical = tokio::fs::canonicalize(&path)
+            .await
+            .with_context(|| format!("Path not found: {}", path.display()))?;
+        lsproj::repostatus::write_repostatus(&canonical, &state, reason.as_deref())?;
+        println!("Marked {} as {state}", canonical.display());
+        return Ok(());
+    }
+
     let scan_dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
     let root_dir = tokio::fs::canonicalize(&scan_dir).await?;
 
@@ -104,10 +120,6 @@ async fn main() -> Result<()> {
         .unwrap();
     all.sort_by(|a, b| a.path.cmp(&b.path));
     let all = apply_filters(all, &args.filter);
-
-    if let Some(SubCommand::Mark { .. }) = &args.command {
-        todo!("mark subcommand — implemented in Task 11");
-    }
 
     match (args.schema, args.json, args.csv) {
         (true, _, _) => output::print_schema(),
