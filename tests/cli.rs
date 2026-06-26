@@ -56,7 +56,11 @@ fn run_lsproj(dir: &Path) -> String {
         .arg("--csv")
         .output()
         .expect("run lsproj");
-    assert!(output.status.success(), "lsproj exited with failure: {:?}", output);
+    assert!(
+        output.status.success(),
+        "lsproj exited with failure: {:?}",
+        output
+    );
     String::from_utf8(output.stdout).expect("utf8 stdout")
 }
 
@@ -265,8 +269,14 @@ fn test_filter_no_git() {
 
     let output = run_lsproj_with_args(root.path(), &["--filter", "no-git"]);
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("myscript"), "expected myscript in --filter no-git output");
-    assert!(!stdout.contains("myrepo"), "myrepo should be excluded by --filter no-git");
+    assert!(
+        stdout.contains("myscript"),
+        "expected myscript in --filter no-git output"
+    );
+    assert!(
+        !stdout.contains("myrepo"),
+        "myrepo should be excluded by --filter no-git"
+    );
 }
 
 #[test]
@@ -287,6 +297,52 @@ fn test_filter_unreviewed() {
 }
 
 #[test]
+fn test_mark_creates_repostatus() {
+    let root = TempDir::new().unwrap();
+    let proj = root.path().join("myproj");
+    std::fs::create_dir(&proj).unwrap();
+    std::fs::write(proj.join("main.rs"), "fn main() {}").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lsproj"))
+        .args(["mark", proj.to_str().unwrap(), "skip", "trivial"])
+        .output()
+        .expect("run lsproj mark");
+    assert!(output.status.success(), "mark failed: {:?}", output);
+
+    let content = std::fs::read_to_string(proj.join(".repostatus")).unwrap();
+    assert!(content.contains("state: skip"));
+    assert!(content.contains("reason: trivial"));
+    assert!(content.contains("reviewed:"));
+}
+
+#[test]
+fn test_mark_updates_existing_repostatus() {
+    let root = TempDir::new().unwrap();
+    let proj = root.path().join("myproj");
+    std::fs::create_dir(&proj).unwrap();
+    std::fs::write(proj.join("main.rs"), "fn main() {}").unwrap();
+    // Pre-existing .repostatus with notes
+    std::fs::write(
+        proj.join(".repostatus"),
+        "state: pending\nnotes: |\n  Keep this note.\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_lsproj"))
+        .args(["mark", proj.to_str().unwrap(), "ready"])
+        .output()
+        .expect("run lsproj mark");
+    assert!(output.status.success());
+
+    let content = std::fs::read_to_string(proj.join(".repostatus")).unwrap();
+    assert!(content.contains("state: ready"), "state should be updated");
+    assert!(
+        content.contains("Keep this note"),
+        "notes should be preserved"
+    );
+}
+
+#[test]
 fn test_table_output_default() {
     let root = TempDir::new().unwrap();
     let repo_dir = root.path().join("myrepo");
@@ -298,7 +354,16 @@ fn test_table_output_default() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     // Table output should have header columns
-    assert!(stdout.contains("PATH"), "expected table header, got: {stdout}");
-    assert!(stdout.contains("STATUS"), "expected table header, got: {stdout}");
-    assert!(stdout.contains("myrepo"), "expected myrepo in table, got: {stdout}");
+    assert!(
+        stdout.contains("PATH"),
+        "expected table header, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("STATUS"),
+        "expected table header, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("myrepo"),
+        "expected myrepo in table, got: {stdout}"
+    );
 }
