@@ -79,6 +79,22 @@ async fn main() -> Result<()> {
     let scan_dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
     let root_dir = tokio::fs::canonicalize(&scan_dir).await?;
 
+    if let Ok(repo) = git2::Repository::discover(&root_dir) {
+        if let Some(workdir) = repo.workdir() {
+            let workdir = workdir.to_path_buf();
+            let parent = workdir.parent().unwrap_or(&workdir).to_path_buf();
+            let meta =
+                task::spawn_blocking(move || extract_metadata(&workdir, &parent)).await??;
+            let results = apply_filters(vec![meta], &args.filter);
+            match (args.json, args.csv) {
+                (true, _) => output::print_json(&results),
+                (_, true) => output::print_csv(&results),
+                _ => output::print_table(&results),
+            }
+            return Ok(());
+        }
+    }
+
     let tasks: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
     let semaphore = Arc::new(Semaphore::new(100));
     let seen_paths: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
