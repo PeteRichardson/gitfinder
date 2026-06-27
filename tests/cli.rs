@@ -367,3 +367,42 @@ fn test_table_output_default() {
         "expected myrepo in table, got: {stdout}"
     );
 }
+
+#[test]
+fn test_discover_from_repo_root() {
+    // Scanning the repo root itself (not its parent) should report the repo.
+    let root = TempDir::new().unwrap();
+    let repo_dir = root.path().join("myrepo");
+    std::fs::create_dir(&repo_dir).unwrap();
+    std::fs::write(repo_dir.join("main.rs"), "fn main() {}").unwrap();
+    init_repo_with_commits(&repo_dir, &[1_700_000_000]);
+
+    let output = run_lsproj_with_args(&repo_dir, &["--json"]);
+    assert!(output.status.success(), "lsproj failed: {:?}", output);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "expected exactly one project, got:\n{stdout}");
+    assert_eq!(arr[0]["name"], "myrepo");
+    assert_eq!(arr[0]["is_git"], true);
+}
+
+#[test]
+fn test_discover_from_inside_repo() {
+    // Scanning a subdirectory inside a repo should report the enclosing repo root.
+    let root = TempDir::new().unwrap();
+    let repo_dir = root.path().join("myrepo");
+    let src_dir = repo_dir.join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("main.rs"), "fn main() {}").unwrap();
+    init_repo_with_commits(&repo_dir, &[1_700_000_000]);
+
+    let output = run_lsproj_with_args(&src_dir, &["--json"]);
+    assert!(output.status.success(), "lsproj failed: {:?}", output);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 1, "expected exactly one project, got:\n{stdout}");
+    assert_eq!(arr[0]["name"], "myrepo", "should report repo root, not src subdir");
+    assert_eq!(arr[0]["is_git"], true);
+}
