@@ -32,13 +32,26 @@ const SKIP_SUFFIXES: &[&str] = &[".xcodeproj", ".xcworkspace", ".noindex"];
 /// - `Project` if the directory is a project root (contains non-hidden files)
 /// - `Collection` if the directory contains only subdirectories (descend into it)
 pub fn classify_entry(path: &Path) -> EntryKind {
-    if let Some(name) = path.file_name().and_then(|n| n.to_str())
-        && (SKIP_COMPONENTS.contains(&name)
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        if SKIP_COMPONENTS.contains(&name)
             || name.eq_ignore_ascii_case("build")
             || SKIP_SUFFIXES.iter().any(|s| name.ends_with(s))
-            || name.contains(".sdk"))
-    {
-        return EntryKind::Skip;
+            || name.contains(".sdk")
+        {
+            return EntryKind::Skip;
+        }
+
+        // Skip Contents/ inside a .app bundle (macOS app packaging convention)
+        if name == "Contents"
+            && path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(|n| n.ends_with(".app"))
+                .unwrap_or(false)
+        {
+            return EntryKind::Skip;
+        }
     }
 
     // Skip git worktrees: .git is a FILE (not a dir) in a linked worktree
@@ -118,6 +131,16 @@ mod tests {
         assert!(skip("MacOSX15.4.sdk (24E241)"));
         assert!(skip("WatchSimulator10.5.sdk watchsimulator (21T569)"));
         assert!(skip("iPhoneOS.sdk"));
+    }
+
+    #[test]
+    fn skips_app_contents() {
+        let path = std::path::Path::new("/Applications/MyApp.app/Contents");
+        assert!(matches!(classify_entry(path), EntryKind::Skip));
+
+        // "Contents" without a .app parent is not skipped by this rule
+        let path2 = std::path::Path::new("/some/project/Contents");
+        assert!(!matches!(classify_entry(path2), EntryKind::Skip));
     }
 
     #[test]
